@@ -1,0 +1,58 @@
+# ==============================
+# Spring Boot 기본 설정
+# ==============================
+spring:
+  application:
+    name: realtime-fin-mq # 애플리케이션 이름
+
+# ==============================
+# Kafka 설정
+# ==============================
+kafka:
+  bootstrap-servers: 127.0.0.1:19092,127.0.0.1:19093,127.0.0.1:19094   # Kafka 브로커 주소
+  topic: financial-transactions       # 테스트용 토픽 이름
+  producer:
+    acks: all                         # 메시지 전송 성공 확인: all -> ISR(복제 브로커) 모두 기록 후 성공
+    retries: 3                        # 실패 시 재시도 횟수
+    batch-size: 16384                 # 배치 전송 크기 (바이트)
+    linger-ms: 5                      # 배치 전송 대기 시간 (ms)
+    buffer-memory: 33554432           # 프로듀서 버퍼 메모리 (32MB)
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    enable-idempotence: true          # 멱등 프로듀서 활성화 (중복 메시지 방지)
+  consumer:
+    group-id: finance-mq-group        # 컨슈머 그룹 ID
+    enable-auto-commit: false         # 자동 커밋 비활성화 -> 수동 커밋
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    max-poll-records: 100             # 한 번 poll 시 최대 가져올 메시지 수
+
+# ==============================
+# 커스텀 MQ 설정
+# ==============================
+custom-mq:
+  queue-size: 10000      # 큐 최대 길이 (메모리 기반)
+  num-consumers: 3       # 동시에 처리할 소비자 스레드 수
+  process-delay-ms: 10   # 메시지 처리 지연 시뮬레이션 (ms)
+  retention-days: 7      # 메시지 보존 기간 (재처리 가능성 확보)
+
+# ==============================
+# Actuator 설정 (모니터링)
+# ==============================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'    # 모든 엔드포인트 활성화
+  endpoint:
+    health:
+      show-details: always  # health check 세부정보 표시
+
+# ==============================
+# 로깅 설정
+# ==============================
+logging:
+  level:
+    root: INFO
+    com.example.realtimefinmq: DEBUG
+    org.springframework.kafka.listener: INFO
