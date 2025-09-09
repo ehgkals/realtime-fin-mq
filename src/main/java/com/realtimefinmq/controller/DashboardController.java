@@ -1,7 +1,7 @@
 package com.realtimefinmq.controller;
 
 import com.realtimefinmq.metrics.MetricsService;
-import com.realtimefinmq.metrics.MetricsService.MetricsDto;
+import com.realtimefinmq.metrics.MetricsDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
