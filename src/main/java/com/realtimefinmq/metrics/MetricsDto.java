@@ -22,7 +22,7 @@ public class MetricsDto {
     private int orderViolationCount; // 순서 위반 발생 건수
 
     // 내구성
-    private int uncommitedCount; // 커밋되지 않은 메시지 수
+    private int uncommittedCount; // 커밋되지 않은 메시지 수
     private int dlqCount; // DLQ(Dead Letter Queue)로 이동한 메시지 수
 
     // 회복성

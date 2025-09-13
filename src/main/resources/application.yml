@@ -4,37 +4,52 @@
 spring:
   application:
     name: realtime-fin-mq # 애플리케이션 이름
+  kafka:
+    bootstrap-servers: 127.0.0.1:19092,127.0.0.1:19093,127.0.0.1:19094   # Kafka 브로커 주소
+
+    # Producer
+    producer:
+      acks: all
+      retries: 3
+      batch-size: 16384
+      linger-ms: 5
+      buffer-memory: 33554432
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+
+    # Consumer
+    consumer:
+      group-id: finance-mq-group
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 100
+      auto-offset-reset: latest
 
 # ==============================
 # Kafka 설정
 # ==============================
 kafka:
-  bootstrap-servers: 127.0.0.1:19092,127.0.0.1:19093,127.0.0.1:19094   # Kafka 브로커 주소
   topic: financial-transactions       # 테스트용 토픽 이름
-  producer:
-    acks: all                         # 메시지 전송 성공 확인: all -> ISR(복제 브로커) 모두 기록 후 성공
-    retries: 3                        # 실패 시 재시도 횟수
-    batch-size: 16384                 # 배치 전송 크기 (바이트)
-    linger-ms: 5                      # 배치 전송 대기 시간 (ms)
-    buffer-memory: 33554432           # 프로듀서 버퍼 메모리 (32MB)
-    key-serializer: org.apache.kafka.common.serialization.StringSerializer
-    value-serializer: org.apache.kafka.common.serialization.StringSerializer
-    enable-idempotence: true          # 멱등 프로듀서 활성화 (중복 메시지 방지)
-  consumer:
-    group-id: finance-mq-group        # 컨슈머 그룹 ID
-    enable-auto-commit: false         # 자동 커밋 비활성화 -> 수동 커밋
-    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    max-poll-records: 100             # 한 번 poll 시 최대 가져올 메시지 수
 
 # ==============================
 # 커스텀 MQ 설정
 # ==============================
 custom-mq:
-  queue-size: 10000      # 큐 최대 길이 (메모리 기반)
-  num-consumers: 3       # 동시에 처리할 소비자 스레드 수
-  process-delay-ms: 10   # 메시지 처리 지연 시뮬레이션 (ms)
-  retention-days: 7      # 메시지 보존 기간 (재처리 가능성 확보)
+  queue-size: 10000          # InMemoryQueue 용량
+  dlq-size: 1000             # DLQ 용량
+  poll-interval-ms: 100      # MyMQ 소비 주기 (스케줄러 fixedDelay)
+  wal-path: logs/mymq/mymq-wal.log   # WAL 파일 경로
+  num-consumers: 3           # 병렬 소비자 스레드 수
+
+cluster:
+  quorum: 2
+  peers:
+    - http://localhost:18081
+    - http://localhost:18082
+    - http://localhost:18083
 
 # ==============================
 # Actuator 설정 (모니터링)
@@ -54,5 +69,5 @@ management:
 logging:
   level:
     root: INFO
-    com.example.realtimefinmq: DEBUG
+    com.realtimefinmq: DEBUG
     org.springframework.kafka.listener: INFO

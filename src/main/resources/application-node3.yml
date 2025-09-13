@@ -1,0 +1,11 @@
+server:
+  port: 18083
+
+custom-mq:
+  wal-path: logs/mymq/node3/wal.log
+
+cluster:
+  nodeId: node3
+  peers:
+    - http://localhost:18081
+    - http://localhost:18082
