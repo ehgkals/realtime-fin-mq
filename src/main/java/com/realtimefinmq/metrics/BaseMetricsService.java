@@ -3,7 +3,9 @@ package com.realtimefinmq.metrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -47,14 +49,22 @@ public class BaseMetricsService {
     private volatile long recoveryTimeMs = 0;
     private final AtomicInteger recoveredMessages = new AtomicInteger(0);
 
+    // ====== 슬라이딩 윈도우용 버퍼 (시간 기반) ======
+    // 최근 latency 샘플들의 <발생시각, 지연>을 저장하고 windowMs 이전 것은 제거
+    private final Deque<Long> winTs = new ArrayDeque<>();     // epoch millis
+    private final Deque<Long> winLat = new ArrayDeque<>();    // latency ms
+    // 동시 접근 대비 락 (간단 구현)
+    private final Object winLock = new Object();
+
     // --------------------------------------------------------------------
     // 성공 처리 기록 (컨슈머가 정상 처리했을 때 호출)
     // --------------------------------------------------------------------
     public void recordMessage(long latencyMs) {
+        long now = System.currentTimeMillis();
         long total   = totalMessages.incrementAndGet();
         long success = successMessages.incrementAndGet();
 
-        // 평균 지연
+        // 누적 평균 지연
         totalLatency.addAndGet(latencyMs);
         int samples = latencySamples.incrementAndGet();
         avgLatencyMs = totalLatency.get() / (double) samples;
@@ -63,6 +73,13 @@ public class BaseMetricsService {
         int idx = latencyIdx.getAndIncrement();
         latencyBuf[idx % LAT_BUF_SIZE] = latencyMs;
         if (!latencyFilled && idx + 1 >= LAT_BUF_SIZE) latencyFilled = true;
+
+        // ---- 슬라이딩 윈도우에도 기록 ----
+        synchronized (winLock) {
+            winTs.addLast(now);
+            winLat.addLast(latencyMs);
+            // 기본 프루닝은 여기선 하지 않고 getWindowMetrics때 windowMs로 정리
+        }
 
         // 로그는 과도한 출력 방지 위해 debug로
         log.debug("[Metrics] success total={} success={} fail={} latencyMs={} avgMs={}",
@@ -169,6 +186,56 @@ public class BaseMetricsService {
 
     private record Percentiles(double p95, double p99) {}
 
+    /**
+     * 주어진 windowMs(예: 60_000) 내의 평균/백분위 계산 (그래프용)
+     * - 누적값은 건드리지 않음 (상단 요약은 계속 누적)
+     */
+    public MetricsDto getWindowMetrics(long windowMs) {
+        final long limit = System.currentTimeMillis() - Math.max(1, windowMs);
+
+        long[] sample;
+        int n = 0;
+
+        synchronized (winLock) {
+            // 오래된 샘플 제거
+            while (!winTs.isEmpty() && winTs.peekFirst() < limit) {
+                winTs.removeFirst();
+                winLat.removeFirst();
+            }
+            // 복사
+            n = winLat.size();
+            sample = new long[n];
+            int i = 0;
+            for (long v : winLat) sample[i++] = v;
+        }
+
+        MetricsDto dto = new MetricsDto();
+
+        if (n == 0) {
+            dto.setAvgLatencyMs(0.0);
+            dto.setP95LatencyMs(0.0);
+            dto.setP99LatencyMs(0.0);
+        } else {
+            // 평균
+            long sum = 0;
+            for (long v : sample) sum += v;
+            dto.setAvgLatencyMs(sum / (double) n);
+
+            // p95/p99
+            Arrays.sort(sample);
+            double p95 = sample[(int)Math.max(0, Math.floor(n * 0.95) - 1)];
+            double p99 = sample[(int)Math.max(0, Math.floor(n * 0.99) - 1)];
+            dto.setP95LatencyMs(p95);
+            dto.setP99LatencyMs(p99);
+        }
+
+        // 그래프에서 같이 쓰는 값(즉시성 수치)은 함께 보내주면 편함
+        dto.setUncommittedCount(uncommittedCount.get());
+        dto.setDlqCount(dlqCount.get());
+
+        return dto;
+    }
+
     // --------------------------------------------------------------------
     // 리셋
     // --------------------------------------------------------------------
@@ -200,6 +267,12 @@ public class BaseMetricsService {
         recoveryTimeMs = 0;
         recoveredMessages.set(0);
 
+        // 윈도우 버퍼도 초기화
+        synchronized (winLock) {
+            winTs.clear();
+            winLat.clear();
+        }
+
         log.info("[Metrics] 모든 지표가 초기화되었습니다.");
     }
 
@@ -212,6 +285,12 @@ public class BaseMetricsService {
         Arrays.fill(latencyBuf, 0L);
         latencyIdx.set(0);
         latencyFilled = false;
+
+        // 윈도우 버퍼도 초기화
+        synchronized (winLock) {
+            winTs.clear();
+            winLat.clear();
+        }
 
         log.info("[Metrics] 레이턴시 윈도우가 초기화되었습니다.");
     }

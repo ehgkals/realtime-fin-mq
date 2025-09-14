@@ -31,6 +31,14 @@ public class DashboardController {
         );
     }
 
+    @GetMapping("/metrics/window")
+    public Map<String, MetricsDto> metricsWindow(@RequestParam(name = "windowMs", defaultValue = "60000") long windowMs) {
+        return Map.of(
+                "kafka", kafkaMetrics.getWindowMetrics(windowMs),
+                "mymq",  myMqMetrics.getWindowMetrics(windowMs)
+        );
+    }
+
     /** Kafka로 n개 발사 후, 최신 지표 스냅샷 반환 */
     @PostMapping("/metrics/kafka/send")
     public Map<String, Object> sendKafka(@RequestParam(defaultValue = "1000") int n) {
