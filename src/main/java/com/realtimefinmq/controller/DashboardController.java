@@ -6,10 +6,7 @@ import com.realtimefinmq.metrics.MyMqMetricsService;
 import com.realtimefinmq.producer.KafkaProducerService;
 import com.realtimefinmq.producer.MyMqProducerService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
@@ -17,6 +14,7 @@ import java.util.Map;
  * REST API
  * 실시간 지표 조회용
  */
+@CrossOrigin(origins = "*")
 @RestController
 @RequiredArgsConstructor
 public class DashboardController {
@@ -58,6 +56,30 @@ public class DashboardController {
                 "sent", count,
                 "target", "mymq",
                 "metrics", myMqMetrics.getMetrics()
+        );
+    }
+
+    /** 지표 리셋 (scope=all | latency) */
+    @PostMapping("/metrics/reset")
+    public Map<String, Object> reset(@RequestParam(defaultValue = "all") String scope) {
+        switch (scope.toLowerCase()) {
+            case "latency" -> {
+                kafkaMetrics.resetLatencyWindow();
+                myMqMetrics.resetLatencyWindow();
+            }
+            case "all" -> {
+                kafkaMetrics.resetAll();
+                myMqMetrics.resetAll();
+            }
+            default -> throw new IllegalArgumentException("scope must be one of: all, latency");
+        }
+        return Map.of(
+                "status", "ok",
+                "scope", scope,
+                "metrics", Map.of(
+                        "kafka", kafkaMetrics.getMetrics(),
+                        "mymq", myMqMetrics.getMetrics()
+                )
         );
     }
 }

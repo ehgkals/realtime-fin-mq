@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>MQ Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+</head>
+<body class="bg-neutral-50">
+<div class="max-w-7xl mx-auto p-6 space-y-6">
+
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight">Realtime MQ Metrics</h1>
+            <p id="status" class="text-sm text-neutral-500">초기화 중…</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <input id="pollMs" type="number" class="border rounded-lg px-3 py-2 w-28" min="300" step="100" value="1000" title="Polling interval (ms)"/>
+            <button id="toggle" class="px-3 py-2 rounded-lg bg-neutral-900 text-white">Pause</button>
+            <button id="sendKafka" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">Kafka 100 발사</button>
+            <button id="sendMyMq" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">MyMQ 100 발사</button>
+
+            <!-- ▼▼ 추가: 리셋 버튼 2개 ▼▼ -->
+            <button id="resetLatency" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">
+                Reset Latency
+            </button>
+            <button id="resetAll" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">
+                Reset All
+            </button>
+            <!-- ▲▲ 추가 끝 ▲▲ -->
+        </div>
+    </header>
+
+    <!-- 요약 -->
+    <div class="grid gap-4 sm:grid-cols-2">
+        <div class="rounded-2xl border bg-white p-4">
+            <h2 class="font-semibold mb-2">Kafka</h2>
+            <div id="sum-kafka" class="text-sm text-neutral-700">-</div>
+        </div>
+        <div class="rounded-2xl border bg-white p-4">
+            <h2 class="font-semibold mb-2">MyMQ</h2>
+            <div id="sum-mymq" class="text-sm text-neutral-700">-</div>
+        </div>
+    </div>
+
+    <!-- 차트 -->
+    <div class="grid gap-6 lg:grid-cols-2">
+        <div class="rounded-2xl border bg-white p-4">
+            <h3 class="text-sm font-medium mb-3">Kafka Latency</h3>
+            <canvas id="latKafka"></canvas>
+        </div>
+        <div class="rounded-2xl border bg-white p-4">
+            <h3 class="text-sm font-medium mb-3">MyMQ Latency</h3>
+            <canvas id="latMyMq"></canvas>
+        </div>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <div class="rounded-2xl border bg-white p-4">
+            <h3 class="text-sm font-medium mb-3">Kafka Uncommitted</h3>
+            <canvas id="unKafka"></canvas>
+        </div>
+        <div class="rounded-2xl border bg-white p-4">
+            <h3 class="text-sm font-medium mb-3">MyMQ Uncommitted</h3>
+            <canvas id="unMyMq"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ===== helpers =====
+    const nf = new Intl.NumberFormat();
+    const pf = n => (n==null ? "-" : `${nf.format(n)} ms`);
+
+    function lineOpts(yTitle) {
+      return {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { ticks: { maxRotation: 0 }, type: 'time', time: { unit: 'second' } },
+          y: { title: { display: true, text: yTitle }, beginAtZero: true }
+        },
+        plugins: { legend: { position: 'bottom' } }
+      };
+    }
+
+    const maxPoints = 180; // 3분 @1s
+
+    function mkLatencyChart(ctx) {
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'avg', data: [], tension: 0.3, borderWidth: 2, pointRadius: 0 },
+            { label: 'p95', data: [], tension: 0.3, borderWidth: 2, pointRadius: 0 },
+            { label: 'p99', data: [], tension: 0.3, borderWidth: 2, pointRadius: 0 },
+          ]
+        },
+        options: lineOpts('ms')
+      });
+    }
+
+    function mkUncommittedChart(ctx) {
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'uncommitted', data: [], tension: 0.3, borderWidth: 2, pointRadius: 0 },
+          ]
+        },
+        options: lineOpts('count')
+      });
+    }
+
+    const latKafka = mkLatencyChart(document.getElementById('latKafka'));
+    const latMyMq  = mkLatencyChart(document.getElementById('latMyMq'));
+    const unKafka  = mkUncommittedChart(document.getElementById('unKafka'));
+    const unMyMq   = mkUncommittedChart(document.getElementById('unMyMq'));
+
+    function pushPoint(chart, ts, values) {
+      chart.data.labels.push(ts);
+      chart.data.datasets.forEach((ds, i) => ds.data.push(values[i]));
+      if (chart.data.labels.length > maxPoints) {
+        chart.data.labels.shift();
+        chart.data.datasets.forEach(ds => ds.data.shift());
+      }
+      chart.update();
+    }
+
+    function updateSummary(id, m) {
+      document.getElementById(id).innerText =
+        `Total ${nf.format(m.totalMessages||0)} · OK ${nf.format(m.successCount||0)} ` +
+        `· Fail ${nf.format(m.failCount||0)} · Avg ${pf(m.avgLatencyMs)} · ` +
+        `p95 ${pf(m.p95LatencyMs)} · p99 ${pf(m.p99LatencyMs)} · ` +
+        `Uncommitted ${nf.format(m.uncommittedCount||0)} · DLQ ${nf.format(m.dlqCount||0)}`;
+    }
+
+    // ▼ 차트/요약 비우기 유틸
+    function clearCharts() {
+      [latKafka, latMyMq, unKafka, unMyMq].forEach(c => {
+        c.data.labels = [];
+        c.data.datasets.forEach(ds => ds.data = []);
+        c.update();
+      });
+    }
+    function clearSummaries() {
+      document.getElementById('sum-kafka').innerText = '-';
+      document.getElementById('sum-mymq').innerText  = '-';
+    }
+
+    // ===== polling =====
+    let pollMs = 1000;
+    let timer = null;
+    let running = true;
+
+    async function tick() {
+      try {
+        const res = await fetch('/metrics');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const ts = new Date();
+
+        updateSummary('sum-kafka', data.kafka || {});
+        updateSummary('sum-mymq',  data.mymq  || {});
+
+        const k = data.kafka || {};
+        const m = data.mymq  || {};
+        pushPoint(latKafka, ts, [k.avgLatencyMs||0, k.p95LatencyMs||0, k.p99LatencyMs||0]);
+        pushPoint(latMyMq,  ts, [m.avgLatencyMs||0, m.p95LatencyMs||0, m.p99LatencyMs||0]);
+
+        pushPoint(unKafka, ts, [k.uncommittedCount||0]);
+        pushPoint(unMyMq,  ts, [m.uncommittedCount||0]);
+
+        document.getElementById('status').innerText = `Polling ${pollMs} ms · running`;
+      } catch (e) {
+        console.error(e);
+        document.getElementById('status').innerText = `Polling ${pollMs} ms · error: ${e.message}`;
+      }
+    }
+
+    function start() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(tick, Math.max(300, pollMs));
+      tick();
+    }
+
+    // 버튼/입력 이벤트
+    document.getElementById('toggle').onclick = () => {
+      running = !running;
+      if (running) {
+        start();
+        document.getElementById('toggle').innerText = 'Pause';
+      } else {
+        clearInterval(timer);
+        document.getElementById('toggle').innerText = 'Resume';
+        document.getElementById('status').innerText = `Polling ${pollMs} ms · paused`;
+      }
+    };
+    document.getElementById('pollMs').onchange = (e) => {
+      pollMs = Number(e.target.value) || 1000;
+      if (running) start();
+    };
+    document.getElementById('sendKafka').onclick = () =>
+      fetch('/metrics/kafka/send?n=100', { method: 'POST' }).catch(console.error);
+    document.getElementById('sendMyMq').onclick = () =>
+      fetch('/metrics/mymq/send?n=100', { method: 'POST' }).catch(console.error);
+
+    // ▼ 추가: 리셋 핸들러
+    document.getElementById('resetLatency').onclick = async () => {
+      try {
+        await fetch('/metrics/reset?scope=latency', { method: 'POST' });
+        clearCharts(); // 그래프 즉시 초기화
+        // 요약은 다음 tick에서 최신값으로 갱신됨
+      } catch (e) { console.error(e); }
+    };
+    document.getElementById('resetAll').onclick = async () => {
+      try {
+        await fetch('/metrics/reset?scope=all', { method: 'POST' });
+        clearCharts();
+        clearSummaries();
+      } catch (e) { console.error(e); }
+    };
+
+    // 시작
+    start();
+</script>
+</body>
+</html>

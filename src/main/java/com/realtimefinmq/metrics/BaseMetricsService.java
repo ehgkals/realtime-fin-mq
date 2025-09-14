@@ -168,4 +168,51 @@ public class BaseMetricsService {
     }
 
     private record Percentiles(double p95, double p99) {}
+
+    // --------------------------------------------------------------------
+    // 리셋
+    // --------------------------------------------------------------------
+    /** 모든 지표(누적 + 윈도우) 초기화 */
+    public synchronized void resetAll() {
+        // 처리량
+        totalMessages.set(0);
+        successMessages.set(0);
+        failMessages.set(0);
+
+        // 지연
+        totalLatency.set(0);
+        latencySamples.set(0);
+        avgLatencyMs = 0.0;
+
+        Arrays.fill(latencyBuf, 0L);
+        latencyIdx.set(0);
+        latencyFilled = false;
+
+        // 정합성
+        duplicateCount.set(0);
+        orderViolationCount.set(0);
+
+        // 내구성
+        uncommittedCount.set(0);
+        dlqCount.set(0);
+
+        // 회복성
+        recoveryTimeMs = 0;
+        recoveredMessages.set(0);
+
+        log.info("[Metrics] 모든 지표가 초기화되었습니다.");
+    }
+
+    /** 레이턴시 관련(평균/백분위)만 초기화 */
+    public synchronized void resetLatencyWindow() {
+        totalLatency.set(0);
+        latencySamples.set(0);
+        avgLatencyMs = 0.0;
+
+        Arrays.fill(latencyBuf, 0L);
+        latencyIdx.set(0);
+        latencyFilled = false;
+
+        log.info("[Metrics] 레이턴시 윈도우가 초기화되었습니다.");
+    }
 }
