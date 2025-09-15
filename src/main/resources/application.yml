@@ -40,8 +40,7 @@ kafka:
 custom-mq:
   queue-size: 10000          # InMemoryQueue 용량
   dlq-size: 1000             # DLQ 용량
-  poll-interval-ms: 100      # MyMQ 소비 주기 (스케줄러 fixedDelay)
-  wal-path: logs/mymq/mymq-wal.log   # WAL 파일 경로
+  poll-interval-ms: 100      # MyMQ 소비 주기
   num-consumers: 1           # 소비자 스레드 수
 
 # ==============================

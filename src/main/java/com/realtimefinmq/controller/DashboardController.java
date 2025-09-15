@@ -1,5 +1,6 @@
 package com.realtimefinmq.controller;
 
+import com.realtimefinmq.consumer.MyMqConsumerService;
 import com.realtimefinmq.metrics.KafkaMetricsService;
 import com.realtimefinmq.metrics.MetricsDto;
 import com.realtimefinmq.metrics.MyMqMetricsService;
@@ -22,6 +23,7 @@ public class DashboardController {
     private final MyMqMetricsService myMqMetrics;
     private final KafkaProducerService kafkaProducerService;
     private final MyMqProducerService myMqProducerService;
+    private final MyMqConsumerService myMqConsumerService;
 
     @GetMapping("/metrics")
     public Map<String, MetricsDto> kafka() {
@@ -87,6 +89,7 @@ public class DashboardController {
             case "all" -> {
                 kafkaMetrics.resetAll();
                 myMqMetrics.resetAll();
+                myMqConsumerService.resetConsistencyWindows();
             }
             default -> throw new IllegalArgumentException("scope must be one of: all, latency");
         }

@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayDeque;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -29,12 +31,16 @@ public class MyMqConsumerService {
     private final Broker broker; // MyMQ 브로커 (큐 + WAL + DLQ)
     private final MyMqConfig cfg; // 폴링/지연 설정 값
 
+    // ===== 중복 감지용(최근 N개 윈도우) =====
     private static final int DEDUPE_WINDOW_SIZE = 100_000;
     private final ConcurrentMap<String, Boolean> processedIds = new ConcurrentHashMap<>();
     private final ArrayDeque<String> processedOrder = new ArrayDeque<>(DEDUPE_WINDOW_SIZE);
     private final Object dedupeLock = new Object(); // 큐 축출 동기화용
 
-    private ExecutorService pool;
+    // ===== 순서 위반 감지용: key별 마지막 seq =====
+    private final ConcurrentMap<String, Long> lastSeqByKey = new ConcurrentHashMap<>();
+
+    private Thread worker;
     private volatile boolean running = true;
 
     /**
@@ -57,9 +63,6 @@ public class MyMqConsumerService {
         }
         return true;
     }
-
-    /** 키별 마지막 seq 저장소(순서 위반 감지) */
-    private final ConcurrentMap<String, Long> lastSeqByKey = new ConcurrentHashMap<>();
 
     /**
      * 순서 위반 검사:
@@ -86,36 +89,20 @@ public class MyMqConsumerService {
 
     @PostConstruct
     void startWorkers() {
-        int n = Math.max(1, cfg.getNumConsumers());                // 최소 1개 보장
-        pool = new ThreadPoolExecutor(
-                n,                                                // corePoolSize: 고정 n
-                n,                                                // maximumPoolSize: 고정 n
-                0L, TimeUnit.MILLISECONDS,                        // keepAlive: 의미 없음(고정 크기)
-                new LinkedBlockingQueue<>(),                      // 작업 큐(워커는 루프형이라 큐 거의 사용 안 함)
-                new ThreadFactory() {                             // 워커 스레드 커스텀 네이밍
-                    final ThreadFactory df = Executors.defaultThreadFactory();
-                    @Override public Thread newThread(Runnable r) {
-                        Thread t = df.newThread(r);
-                        t.setName("mymq-consumer-" + t.getId());  // 스레드명: 문제 추적 용이
-                        t.setDaemon(true);                        // 데몬 스레드(프로세스 생명주기와 함께 종료)
-                        return t;
-                    }
-                });
-
-        for (int i = 0; i < n; i++) {
-            pool.submit(this::consumeLoop);                       // n개 워커 루프 가동
-        }
-        log.info("[MyMQ-Consumer] {} worker(s) started.", n);     // 기동 로그
+        worker = new Thread(this::consumeLoop, "mymq-consumer-1");
+        worker.setDaemon(true);
+        worker.start();
+        log.info("[MyMQ-Consumer] 워커 실행");
     }
 
     @PreDestroy
     void stopWorkers() throws InterruptedException {
-        running = false;                                          // 워커 루프 종료 신호
-        if (pool != null) {
-            pool.shutdownNow();                                   // 인터럽트로 깨워 즉시 종료 시도
-            pool.awaitTermination(5, TimeUnit.SECONDS);           // 최대 5초 대기
+        running = false;
+        if (worker != null) {
+            worker.interrupt(); // poll 대기/park 해제용
+            worker.join(5_000);
         }
-        log.info("[MyMQ-Consumer] workers stopped.");             // 종료 로그
+        log.info("[MyMQ-Consumer] 워커 정지");
     }
 
     /** 지속 폴링 워커(각 스레드가 이 메서드를 무한 루프로 수행) */
@@ -176,8 +163,18 @@ public class MyMqConsumerService {
                     }
                 }
             } catch (Throwable t) {
+                if (!running && t instanceof InterruptedException) break;
                 log.error("[MyMQ-Consumer] 워커 예외: {}", t.getMessage(), t);
             }
         }
+    }
+
+    public void resetConsistencyWindows() {
+        synchronized (dedupeLock) {
+            processedOrder.clear();
+            processedIds.clear();
+        }
+        lastSeqByKey.clear();
+        log.info("[MyMQ-Consumer] dedupe/order 상태 초기화 완료");
     }
 }

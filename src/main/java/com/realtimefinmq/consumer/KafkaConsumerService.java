@@ -20,7 +20,7 @@ public class KafkaConsumerService {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final KafkaProps kafkaProps;
 
-    @KafkaListener(topics = "#{@kafkaProps.topic}", groupId = "#{@kafkaProps.consumer.groupId}")
+    @KafkaListener(topics = "#{@kafkaProps.topic}")
     public void consume(ConsumerRecord<String, String> record) {
         String key = record.key();
         String value = record.value();
@@ -52,7 +52,6 @@ public class KafkaConsumerService {
             String dlqTopic = kafkaProps.getTopic() + ".dlq";
             try {
                 kafkaTemplate.send(dlqTopic, key, value); // DLQ로 전송
-                metrics.recordDlq();
                 log.warn("[Consumer] DLQ 전송 | key={}", key);
             } catch (Exception ex) {
                 log.error("[Consumer] DLQ 전송 실패 | key={} | 이유={}", key, ex.getMessage(), ex);

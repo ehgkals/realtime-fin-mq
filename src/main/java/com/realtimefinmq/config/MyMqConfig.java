@@ -20,12 +20,6 @@ public class MyMqConfig {
     // DLQ 용량
     private int dlqSize = 1000;
 
-    // 소비 주기 (스케줄러 fixedDelay)
+    // 소비 주기
     private long pollIntervalMs = 100;
-
-    // WAL 파일 경로
-    private String walPath = "./mymq-wal.log";
-
-    // 병렬 소비자 스레드 수
-    private int numConsumers = 1;
 }

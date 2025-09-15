@@ -23,9 +23,4 @@ public class MetricsDto {
 
     // 내구성
     private int uncommittedCount; // 커밋되지 않은 메시지 수
-    private int dlqCount; // DLQ(Dead Letter Queue)로 이동한 메시지 수
-
-    // 회복성
-    private long recoveryTimeMs; // 장애 발생 후 정상화까지 걸린 시간
-    private int recoveredMessages; // 정상화 후 다시 처리된 메시지 수
 }
