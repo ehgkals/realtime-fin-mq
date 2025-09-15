@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * 메시지 DTO
- * Kafka로 주고받을 데이터 구조 정의
+ * 메시지 큐로 주고받을 데이터 구조 정의
  */
 @Data
 @NoArgsConstructor
@@ -16,4 +16,6 @@ public class Message {
     private String id;       // 메시지 고유 ID
     private String payload;  // 실제 데이터
     private long timestamp;  // 생성 시각
+    private String key;      // 파티션 키
+    private Long sequence;   // 시퀀스
 }

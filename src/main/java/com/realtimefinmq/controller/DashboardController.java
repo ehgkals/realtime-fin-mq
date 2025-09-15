@@ -55,10 +55,19 @@ public class DashboardController {
 
     /** MyMQ로 n개 발사 후, 최신 지표 스냅샷 반환 */
     @PostMapping("/metrics/mymq/send")
-    public Map<String, Object> sendMyMq(@RequestParam(defaultValue = "1000") int n) {
+    public Map<String, Object> sendMyMq(
+            @RequestParam(defaultValue = "1000") int n,
+            @RequestParam(required = false) String key,
+            @RequestParam(defaultValue = "16") int keyBuckets
+    ) {
         int count = Math.max(0, n);
+        int buckets = Math.max(1, keyBuckets);
+
         for (int i = 0; i < count; i++) {
-            myMqProducerService.publish("mymq-test-" + i);
+            String effectiveKey = (key != null && !key.isBlank())
+                    ? key
+                    : "key-" + (i % buckets);
+            myMqProducerService.publish(effectiveKey, "mymq-test-" + i);
         }
         return Map.of(
                 "sent", count,
@@ -86,7 +95,7 @@ public class DashboardController {
                 "scope", scope,
                 "metrics", Map.of(
                         "kafka", kafkaMetrics.getMetrics(),
-                        "mymq", myMqMetrics.getMetrics()
+                        "mymq",  myMqMetrics.getMetrics()
                 )
         );
     }

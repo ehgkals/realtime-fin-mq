@@ -14,6 +14,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -38,7 +39,6 @@ public class RealtimeFinMqApplication implements CommandLineRunner {
 	private boolean autorun;
 
 	public static void main(String[] args) {
-
 		SpringApplication.run(RealtimeFinMqApplication.class, args);
 	}
 
@@ -56,13 +56,19 @@ public class RealtimeFinMqApplication implements CommandLineRunner {
 		// === 부하 테스트 설정값 ===
 		int threads = 4;          // 동시에 실행할 스레드 수
 		int totalMessages = 10; // 보낼 메시지 수
-		String payloadPrefix = "부하 테스트 메시지-";
+		int keyBuckets     = 16;  // MyMQ용 키 버킷(동일 키는 순서 의미)
 
 		// Kafka 테스트
 			runLoadTest("Kafka", totalMessages, threads, kafkaProducerService::sendMessage);
 
 		// MyMQ 테스트
-		runLoadTest("MyMQ", totalMessages, threads, myMqProducerService::publish);
+		runLoadTestWithKey(
+				"MyMQ",
+				totalMessages,
+				threads,
+				(key, payload) -> myMqProducerService.publish(key, payload),
+				i -> "key-" + (i % keyBuckets) // 간단한 키 생성 전략
+		);
 	}
 
 	/**
@@ -85,6 +91,39 @@ public class RealtimeFinMqApplication implements CommandLineRunner {
 		for (int i = 0; i < totalMessages; i++) {
 			final String payload = "부하 테스트 메시지-" + i;
 			pool.submit(() -> sender.accept(payload));
+		}
+
+		pool.shutdown();
+		pool.awaitTermination(10, TimeUnit.MINUTES);
+
+		long took = System.currentTimeMillis() - start;
+		long tps = (totalMessages * 1000L) / Math.max(took, 1);
+
+		System.out.println("\n==== [" + label + "] 부하 테스트 결과 ====");
+		System.out.println("총 메시지: " + totalMessages);
+		System.out.println("소요 시간: " + took + " ms");
+		System.out.println("평균 TPS: " + tps);
+	}
+
+	/**
+	 * 공통 부하 테스트 (key + payload 필요)
+	 *
+	 * @param keyFn i번째 메시지의 key를 만드는 함수(예: i -> "key-" + (i % 16))
+	 */
+	private void runLoadTestWithKey(String label,
+									int totalMessages,
+									int threads,
+									BiConsumer<String, String> sender,
+									java.util.function.IntFunction<String> keyFn) throws InterruptedException {
+
+		ExecutorService pool = Executors.newFixedThreadPool(threads);
+		long start = System.currentTimeMillis();
+
+		for (int i = 0; i < totalMessages; i++) {
+			final int idx = i;
+			final String payload = "부하 테스트 메시지-" + idx;
+			final String key = keyFn.apply(idx);
+			pool.submit(() -> sender.accept(key, payload));
 		}
 
 		pool.shutdown();

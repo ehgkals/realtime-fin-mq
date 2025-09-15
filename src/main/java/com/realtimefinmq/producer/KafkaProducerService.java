@@ -1,5 +1,7 @@
 package com.realtimefinmq.producer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realtimefinmq.config.KafkaProps;
 import com.realtimefinmq.metrics.KafkaMetricsService;
 import com.realtimefinmq.mq.Message;
@@ -22,6 +24,7 @@ public class KafkaProducerService {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final KafkaMetricsService metrics;
     private final KafkaProps kafkaProps;
+    private final ObjectMapper objectMapper;
 
     /**
      * 금융 거래 메시지를 Kafka로 전송
@@ -33,34 +36,48 @@ public class KafkaProducerService {
             return;
         }
 
+        final String id = UUID.randomUUID().toString();
+        final long ts = System.currentTimeMillis();
+
         // 메시지 DTO 생성
-        Message message = new Message(UUID.randomUUID().toString(), payload, System.currentTimeMillis());
+        Message message = new Message(id, payload, ts, null, null);
         String topic = kafkaProps.getTopic();
         log.debug("[Producer] 메시지 생성 | id: {} | payload: {}", message.getId(), payload);
 
-        // ProducerRecord 구성 (key=id → 파티셔닝/순서 보장)
-        ProducerRecord<String, String> record = new ProducerRecord<>(topic, null, message.getId(), message.toString());
+        // 값은 JSON으로 직렬화 (toString() 사용 지양)
+        String value;
+        try {
+            value = objectMapper.writeValueAsString(message);
+        } catch (JsonProcessingException e) {
+            // 직렬화 실패 시 폴백: 최소한 payload라도 보냄
+            log.warn("[Kafka-Producer] JSON 직렬화 실패: {} → payload만 전송", e.getMessage());
+            value = payload;
+        }
+
+        // key를 msgId로 주면 동일 id 기준으로 파티션/순서 고정 가능
+        ProducerRecord<String, String> record = new ProducerRecord<>(topic, id, value);
 
         // 헤더: 생성 시각(ts)과 msgId를 담아 E2E 지연 추적
-        record.headers().add("ts", Long.toString(message.getTimestamp()).getBytes(StandardCharsets.UTF_8));
-        record.headers().add("msgId", message.getId().getBytes(StandardCharsets.UTF_8));
+        record.headers().add("ts", Long.toString(ts).getBytes(StandardCharsets.UTF_8));
+        record.headers().add("msgId", id.getBytes(StandardCharsets.UTF_8));
 
+        // 프로듀스 시도 → 소비 전까지 미커밋 +1
         metrics.incUncommitted();
 
-        // 전송
         CompletableFuture<SendResult<String, String>> future = kafkaTemplate.send(record);
 
-        // 전송 성공/실패 여부 로그
         future.whenComplete((result, ex) -> {
             if (ex != null) {
-                log.error("[Producer] 전송 실패 | id:{} | 이유:{}", message.getId(), ex.getMessage(), ex);
+                // 브로커 수용 실패 → 미커밋 보정 및 실패 집계
+                log.error("[Kafka-Producer] 전송 실패 | id:{} | 이유:{}", id, ex.getMessage(), ex);
                 metrics.decUncommitted();
                 metrics.recordFailure();
             } else {
-                log.debug("[Producer] 전송 성공 | id:{} | partition:{} | offset:{}",
-                        message.getId(),
+                log.debug("[Kafka-Producer] 전송 성공 | id:{} | partition:{} | offset:{}",
+                        id,
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset());
+                // 성공 시에는 컨슈머가 처리 완료할 때 decUncommitted() 호출됨
             }
         });
     }
