@@ -9,7 +9,6 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,7 +26,6 @@ import java.util.function.Consumer;
 @SpringBootApplication
 @RequiredArgsConstructor
 @ConfigurationPropertiesScan
-@EnableScheduling
 public class RealtimeFinMqApplication implements CommandLineRunner {
 	// Kafka 메시지 발행 서비스
 	private final KafkaProducerService kafkaProducerService;

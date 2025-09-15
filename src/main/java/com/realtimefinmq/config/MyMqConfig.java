@@ -28,7 +28,4 @@ public class MyMqConfig {
 
     // 병렬 소비자 스레드 수
     private int numConsumers = 1;
-
-    // Quorom 수
-    private int quorum = 1;
 }
