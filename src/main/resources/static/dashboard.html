@@ -30,7 +30,6 @@
             <button id="resetAll" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">
                 Reset All
             </button>
-            <!-- ▲▲ 추가 끝 ▲▲ -->
         </div>
     </header>
 
@@ -156,7 +155,7 @@
         `Total ${nf.format(m.totalMessages||0)} · OK ${nf.format(m.successCount||0)} ` +
         `· Fail ${nf.format(m.failCount||0)} · Avg ${pf(m.avgLatencyMs)} · ` +
         `p95 ${pf(m.p95LatencyMs)} · p99 ${pf(m.p99LatencyMs)} · ` +
-        `Uncommitted ${nf.format(m.uncommittedCount||0)} · DLQ ${nf.format(m.dlqCount||0)}`;
+        `Uncommitted ${nf.format(m.uncommittedCount||0)}`;
     }
 
     // ▼ 차트/요약 비우기 유틸
