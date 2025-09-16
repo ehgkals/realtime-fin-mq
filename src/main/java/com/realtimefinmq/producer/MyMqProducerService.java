@@ -71,13 +71,12 @@ public class MyMqProducerService {
         log.debug("[MyMQ-Producer] 생성 | id={} key={} seq={} ts={} payload={}", id, key, seq, ts, payload);
 
         try {
-            // 브로커 enqueue (내부에서 WAL/멱등/DLQ 처리)
+            // 브로커 enqueue
             final boolean accepted = broker.enqueue(msg);
 
             // 결과 로그
             if (!accepted) {
-                // 큐 포화, 중복 등으로 정상 큐에 못들어간 케이스 (DLQ로 갔을 수 있음)
-                log.warn("[MyMQ-Producer] enqueue 실패/우회(DLQ 가능성) | id={} key={} seq={}", id, key, seq);
+                log.warn("[MyMQ-Producer] enqueue 실패 | id={} key={} seq={}", id, key, seq);
                 return false;
             } else {
                 log.debug("[MyMQ-Producer] 메시지 발행 완료 | id={} key={} seq={}", id, key, seq);
@@ -85,7 +84,7 @@ public class MyMqProducerService {
                 return true;
             }
         } catch (Exception e) {
-            // enqueue 중 예외 (WAL 실패 / 디스크 오류 / 장애주입 등)
+            // enqueue 중 예외
             log.error("[MyMQ-Producer] 메시지 발행 실패 | id={} key={} seq={} | 이유={}", id, key, seq, e.getMessage(), e);
             return false;
         }

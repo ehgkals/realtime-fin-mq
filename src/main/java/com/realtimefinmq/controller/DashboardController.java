@@ -78,6 +78,24 @@ public class DashboardController {
         );
     }
 
+    @PostMapping("/metrics/both/send")
+    public Map<String, Object> sendBoth(@RequestParam(defaultValue = "1000") int n) {
+        int count = Math.max(0, n);
+        for (int i = 0; i < count; i++) {
+            kafkaProducerService.sendMessage("kafka-test-" + i);
+            myMqProducerService.publish("key-" + (i % 16), "mymq-test-" + i);
+        }
+        return Map.of(
+                "sentKafka", count,
+                "sentMyMq", count,
+                "target", "both",
+                "metrics", Map.of(
+                        "kafka", kafkaMetrics.getMetrics(),
+                        "mymq",  myMqMetrics.getMetrics()
+                )
+        );
+    }
+
     /** 지표 리셋 (scope=all | latency) */
     @PostMapping("/metrics/reset")
     public Map<String, Object> reset(@RequestParam(defaultValue = "all") String scope) {

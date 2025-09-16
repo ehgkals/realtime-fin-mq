@@ -68,7 +68,6 @@ public class KafkaProducerService {
 
         future.whenComplete((result, ex) -> {
             if (ex != null) {
-                // 브로커 수용 실패 → 미커밋 보정 및 실패 집계
                 log.error("[Kafka-Producer] 전송 실패 | id:{} | 이유:{}", id, ex.getMessage(), ex);
                 metrics.decUncommitted();
                 metrics.recordFailure();
@@ -77,7 +76,6 @@ public class KafkaProducerService {
                         id,
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset());
-                // 성공 시에는 컨슈머가 처리 완료할 때 decUncommitted() 호출됨
             }
         });
     }

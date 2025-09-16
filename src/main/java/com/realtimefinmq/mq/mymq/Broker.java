@@ -38,7 +38,6 @@ public class Broker {
                 return false;
             }
 
-            // 미커밋 +1 은 현재 프로듀서에서 하고 있으므로 여기서는 생략
             return true;
 
         } catch (Exception e) {

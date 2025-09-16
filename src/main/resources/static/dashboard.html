@@ -19,6 +19,7 @@
         <div class="flex flex-wrap items-center gap-2">
             <input id="pollMs" type="number" class="border rounded-lg px-3 py-2 w-28" min="300" step="100" value="1000" title="Polling interval (ms)"/>
             <button id="toggle" class="px-3 py-2 rounded-lg bg-neutral-900 text-white">Pause</button>
+            <button id="sendBoth" class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Send</button>
             <button id="sendKafka" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">Kafka 10000 전송</button>
             <button id="sendMyMq" class="px-3 py-2 rounded-lg border bg-white hover:bg-neutral-50">MyMQ 10000 전송</button>
 
@@ -71,6 +72,23 @@
 
 <script>
     // ===== helpers =====
+    let sendTimer = null;
+    const DEFAULT_RATE_PER_SEC = 1000; // "적당한 갯수" 기본치
+
+    function setStatus(text) {
+      const base = text ?? `Polling ${pollMs} ms · ${running ? 'running' : 'paused'} · window=${windowMs/1000}s`;
+      const suffix = sendTimer ? ` · sending ${DEFAULT_RATE_PER_SEC}/s → both` : '';
+      document.getElementById('status').innerText = base + suffix;
+    }
+
+    async function sendBurstBoth(n) {
+      try {
+        await fetch(`/metrics/both/send?n=${n}`, { method: 'POST' });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     const nf = new Intl.NumberFormat();
     const pf = n => (n==null ? "-" : `${nf.format(n)} ms`);
 
@@ -188,7 +206,7 @@
         document.getElementById('status').innerText = `Polling ${pollMs} ms · running · window=${windowMs/1000}s`;
       } catch (e) {
         console.error(e);
-        document.getElementById('status').innerText = `Polling ${pollMs} ms · error: ${e.message}`;
+        setStatus();
       }
     }
 
@@ -204,15 +222,29 @@
       if (running) {
         start();
         document.getElementById('toggle').innerText = 'Pause';
+        setStatus();
       } else {
         clearInterval(timer);
         document.getElementById('toggle').innerText = 'Resume';
-        document.getElementById('status').innerText = `Polling ${pollMs} ms · paused`;
+        setStatus(`Polling ${pollMs} ms · paused`);
       }
     };
     document.getElementById('pollMs').onchange = (e) => {
       pollMs = Number(e.target.value) || 1000;
       if (running) start();
+    };
+    document.getElementById('sendBoth').onclick = () => {
+      const btn = document.getElementById('sendBoth');
+      if (sendTimer) {
+        clearInterval(sendTimer);
+        sendTimer = null;
+        btn.innerText = 'Send';
+        setStatus(); // 상태 갱신
+      } else {
+        sendTimer = setInterval(() => sendBurstBoth(DEFAULT_RATE_PER_SEC), 1000);
+        btn.innerText = 'Stop';
+        setStatus(); // 상태 갱신
+      }
     };
     document.getElementById('sendKafka').onclick = () =>
       fetch('/metrics/kafka/send?n=10000', { method: 'POST' }).catch(console.error);
@@ -234,6 +266,10 @@
         clearSummaries();
       } catch (e) { console.error(e); }
     };
+    // 페이지 떠날 때 정리
+    window.addEventListener('beforeunload', () => {
+      if (sendTimer) clearInterval(sendTimer);
+    });
 
     // 시작
     start();

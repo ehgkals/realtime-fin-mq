@@ -71,9 +71,8 @@ public class MyMqConsumerService {
      * - 정상/위반 여부와 관계없이 마지막 seq 갱신(더 큰 값만)
      */
     private void checkOrderViolation(Message msg) {
-        // ▼ Message가 이런 메서드를 가진다고 가정 (없으면 아래 주석의 대안 사용)
-        String key = msg.getKey();        // 키(파티셔닝 기준)
-        Long   seq = msg.getSequence();   // 단조 증가하는 번호(프로듀서가 부여)
+        String key = msg.getKey();
+        Long   seq = msg.getSequence();
         if (key == null || seq == null) return;
 
         lastSeqByKey.compute(key, (k, prev) -> {
