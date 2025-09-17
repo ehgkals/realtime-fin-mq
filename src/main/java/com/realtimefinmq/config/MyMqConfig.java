@@ -17,9 +17,6 @@ public class MyMqConfig {
     // InMemoryQueue 용량
     private int queueSize = 10000;
 
-    // DLQ 용량
-    private int dlqSize = 1000;
-
     // 소비 주기
     private long pollIntervalMs = 100;
 }
